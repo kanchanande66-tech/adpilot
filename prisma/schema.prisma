@@ -1,0 +1,479 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleName {
+  SUPER_ADMIN
+  ORG_ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum AdNetwork {
+  GOOGLE
+  META
+}
+
+enum CampaignStatus {
+  DRAFT
+  PENDING_REVIEW
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum AdStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  REJECTED
+}
+
+enum KeywordMatchType {
+  EXACT
+  PHRASE
+  BROAD
+}
+
+enum SubscriptionPlan {
+  STARTER
+  GROWTH
+  AGENCY
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  PAST_DUE
+  UNPAID
+}
+
+enum ReportFormat {
+  PDF
+  CSV
+  EXCEL
+}
+
+enum ReportStatus {
+  PENDING
+  GENERATING
+  COMPLETED
+  FAILED
+}
+
+model Organization {
+  id                 String               @id @default(uuid())
+  name               String
+  slug               String               @unique
+  stripeCustomerId   String?              @unique
+  plan               SubscriptionPlan     @default(STARTER)
+  status             SubscriptionStatus   @default(ACTIVE)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  deletedAt          DateTime?
+
+  users              User[]
+  members            OrganizationMember[]
+  websites           Website[]
+  adAccounts         AdAccount[]
+  campaigns          Campaign[]
+  aiConversations    AIConversation[]
+  aiAgentActions     AIAgentAction[]
+  reports            Report[]
+  subscriptions      Subscription[]
+  invoices           Invoice[]
+  payments           Payment[]
+  notifications      Notification[]
+  auditLogs          AuditLog[]
+
+  @@index([slug])
+  @@index([deletedAt])
+}
+
+model Role {
+  id          String             @id @default(uuid())
+  name        RoleName           @unique
+  description String?
+  permissions RolePermission[]
+  members     OrganizationMember[]
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+}
+
+model Permission {
+  id          String             @id @default(uuid())
+  resource    String
+  action      String
+  roles       RolePermission[]
+  createdAt   DateTime           @default(now())
+  
+  @@unique([resource, action])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model User {
+  id             String               @id @default(uuid())
+  email          String               @unique
+  name           String?
+  externalAuthId String               @unique
+  password       String?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  deletedAt      DateTime?
+
+  sessions       Session[]
+  memberships    OrganizationMember[]
+  aiMessages     AIMessage[]
+  aiAgentActions AIAgentAction[]
+  auditLogs      AuditLog[]
+  notifications  Notification[]
+
+  @@index([externalAuthId])
+  @@index([deletedAt])
+}
+
+model OrganizationMember {
+  id             String           @id @default(uuid())
+  organizationId String
+  userId         String
+  roleId         String
+  status         String           @default("ACTIVE")
+  invitedAt      DateTime         @default(now())
+  joinedAt       DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           Role             @relation(fields: [roleId], references: [id])
+
+  @@unique([organizationId, userId])
+  @@index([organizationId, status])
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([token])
+}
+
+model Website {
+  id             String           @id @default(uuid())
+  organizationId String
+  url            String
+  status         String           @default("PENDING")
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  deletedAt      DateTime?
+
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  scans          WebsiteScan[]
+  analysis       WebsiteAnalysis?
+
+  @@unique([organizationId, url])
+  @@index([organizationId, status])
+  @@index([deletedAt])
+}
+
+model WebsiteScan {
+  id             String          @id @default(uuid())
+  websiteId      String
+  status         String          @default("PENDING")
+  rawHtml        String?         @db.Text
+  errorMessage   String?
+  createdAt      DateTime        @default(now())
+
+  website        Website         @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  analysis       WebsiteAnalysis?
+
+  @@index([websiteId, createdAt])
+}
+
+model WebsiteAnalysis {
+  id                   String          @id @default(uuid())
+  websiteId            String          @unique
+  websiteScanId        String          @unique
+  businessSummary      String          @db.Text
+  brandVoice           String
+  targetAudience       String
+  customerPersonas     Json
+  advertisingAngles    Json
+  offerAnalysis        Json
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  website              Website         @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  scan                 WebsiteScan     @relation(fields: [websiteScanId], references: [id], onDelete: Cascade)
+}
+
+model AdAccount {
+  id                 String         @id @default(uuid())
+  organizationId     String
+  network            AdNetwork
+  externalAccountId  String
+  accessToken        String         @db.Text
+  refreshToken       String?        @db.Text
+  tokenExpiry        DateTime?
+  status             String         @default("ACTIVE")
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  organization       Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaigns          Campaign[]
+
+  @@unique([organizationId, network, externalAccountId])
+  @@index([organizationId, status])
+}
+
+model Campaign {
+  id                 String           @id @default(uuid())
+  organizationId     String
+  adAccountId        String
+  name               String
+  network            AdNetwork
+  status             CampaignStatus   @default(DRAFT)
+  budget             Decimal          @db.Decimal(10, 2)
+  currency           String           @default("USD")
+  externalCampaignId String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  deletedAt          DateTime?
+
+  organization       Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  adAccount          AdAccount        @relation(fields: [adAccountId], references: [id], onDelete: Restrict)
+  adGroups           AdGroup[]
+  aiConversations    AIConversation[]
+
+  @@index([organizationId, status])
+  @@index([organizationId, deletedAt])
+}
+
+model AdGroup {
+  id                String         @id @default(uuid())
+  campaignId        String
+  name              String
+  status            String         @default("ACTIVE")
+  externalAdGroupId String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  deletedAt         DateTime?
+
+  campaign          Campaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  ads               Ad[]
+  keywords          Keyword[]
+
+  @@index([campaignId, status])
+  @@index([campaignId, deletedAt])
+}
+
+model Ad {
+  id             String      @id @default(uuid())
+  adGroupId      String
+  name           String
+  status         AdStatus    @default(DRAFT)
+  headline       String      @db.VarChar(30)
+  description    String      @db.VarChar(90)
+  cta            String      @db.VarChar(25)
+  externalAdId   String?
+  metrics        Json?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  deletedAt      DateTime?
+
+  adGroup        AdGroup     @relation(fields: [adGroupId], references: [id], onDelete: Cascade)
+
+  @@index([adGroupId, status])
+  @@index([adGroupId, deletedAt])
+}
+
+model Keyword {
+  id             String            @id @default(uuid())
+  adGroupId      String
+  text           String            @db.VarChar(255)
+  matchType      KeywordMatchType
+  maxCpc         Decimal?          @db.Decimal(10, 4)
+  status         String            @default("ACTIVE")
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  deletedAt      DateTime?
+
+  adGroup        AdGroup           @relation(fields: [adGroupId], references: [id], onDelete: Cascade)
+
+  @@index([adGroupId, status])
+  @@index([adGroupId, deletedAt])
+}
+
+model AIConversation {
+  id             String         @id @default(uuid())
+  organizationId String
+  campaignId     String?
+  title          String         @default("New Conversation")
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  deletedAt      DateTime?
+
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaign       Campaign?      @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  messages       AIMessage[]
+  agentActions   AIAgentAction[]
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, deletedAt])
+}
+
+model AIMessage {
+  id             String           @id @default(uuid())
+  conversationId String
+  userId         String?
+  role           String
+  content        String           @db.Text
+  toolCalls      Json?
+  createdAt      DateTime         @default(now())
+
+  conversation   AIConversation   @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user           User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, createdAt])
+}
+
+model AIAgentAction {
+  id             String           @id @default(uuid())
+  organizationId String
+  userId         String
+  conversationId String?
+  actionType     String
+  payload        Json
+  status         String           @default("PENDING")
+  executedAt     DateTime?
+  createdAt      DateTime         @default(now())
+
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  conversation   AIConversation?  @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status])
+  @@index([organizationId, createdAt])
+}
+
+model Report {
+  id             String         @id @default(uuid())
+  organizationId String
+  type           String
+  format         ReportFormat
+  status         ReportStatus   @default(PENDING)
+  s3Key          String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  deletedAt      DateTime?
+
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@index([organizationId, deletedAt])
+}
+
+model Subscription {
+  id                   String             @id @default(uuid())
+  organizationId       String             @unique
+  stripeSubscriptionId String             @unique
+  plan                 SubscriptionPlan
+  status               SubscriptionStatus
+  currentPeriodEnd     DateTime
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  organization         Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invoices             Invoice[]
+  payments             Payment[]
+
+  @@index([organizationId, status])
+}
+
+model Invoice {
+  id               String         @id @default(uuid())
+  organizationId   String
+  subscriptionId   String
+  stripeInvoiceId  String         @unique
+  amount           Decimal        @db.Decimal(10, 2)
+  currency         String         @default("USD")
+  status           String
+  pdfUrl           String?
+  createdAt        DateTime       @default(now())
+
+  organization     Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  subscription     Subscription   @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+}
+
+model Payment {
+  id              String         @id @default(uuid())
+  organizationId  String
+  subscriptionId  String
+  stripePaymentId String         @unique
+  amount          Decimal        @db.Decimal(10, 2)
+  currency        String         @default("USD")
+  status          String
+  createdAt       DateTime       @default(now())
+
+  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  subscription    Subscription   @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+}
+
+model Notification {
+  id             String         @id @default(uuid())
+  organizationId String
+  userId         String?
+  type           String
+  title          String
+  message        String         @db.Text
+  read           Boolean        @default(false)
+  createdAt      DateTime       @default(now())
+
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User?          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, read, createdAt])
+}
+
+model AuditLog {
+  id             String         @id @default(uuid())
+  organizationId String
+  userId         String?
+  action         String
+  entityType     String
+  entityId       String?
+  payload        Json
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime       @default(now())
+
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([entityType, entityId])
+}
