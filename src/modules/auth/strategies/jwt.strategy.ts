@@ -30,7 +30,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     const membership = user.memberships.find(
-      (m) => m.organizationId === payload.organizationId && m.status === 'ACTIVE'
+      (m: any) => m.organizationId === payload.organizationId && m.status === 'ACTIVE'
     );
 
     if (!membership) {

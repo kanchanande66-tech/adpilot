@@ -23,7 +23,7 @@ export class AuthService {
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
 
-    const result = await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx: any) => {
       const orgSlug = dto.organizationName 
         ? dto.organizationName.toLowerCase().replace(/\s+/g, '-') 
         : `org-${Date.now()}`;
@@ -82,7 +82,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const activeMembership = user.memberships.find(m => m.status === 'ACTIVE');
+    const activeMembership = user.memberships.find((m: any) => m.status === 'ACTIVE');
     if (!activeMembership) {
       throw new UnauthorizedException('No active organization membership found');
     }
